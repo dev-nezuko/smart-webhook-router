@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: webhook_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-webhooks}
+      POSTGRES_USER: ${POSTGRES_USER:-webhooks}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webhooks}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-webhooks} -d ${POSTGRES_DB:-webhooks}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: webhook_redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webhook_web
+    command: ["sh", "/app/scripts/start-web.sh"]
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webhook_worker
+    command: ["sh", "/app/scripts/start-worker.sh"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:
